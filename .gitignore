@@ -1,0 +1,4 @@
+/target
+/mnist
+.DS_Store
+*.json

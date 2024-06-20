@@ -1,0 +1,26 @@
+[package]
+name = "tsetlin-mnist-rs"
+version = "0.1.0"
+edition = "2021"
+
+[lints.rust]
+unused = "allow"
+
+[profile.release]
+debug = true
+# codegen-units = 1
+# lto = "fat"
+# panic = "abort"
+
+[dependencies]
+itertools = "0.13.0"
+ndarray = { version = "0.15.6", features = ["serde"] }
+rand = { version = "0.8.5", features = ["small_rng"] }
+serde = { version = "1.0.203", features = ["derive"] }
+serde_json = "1.0.117"
+sys-info = "0.9.1"
+rand_xoshiro = "0.6.0"
+rayon = "1.10.0"
+wide = "0.7.24"
+bitvec = "1.0.1"
+bit-vec = "0.6.3"
