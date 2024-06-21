@@ -7,8 +7,9 @@ use std::str::FromStr;
 use std::time::Instant;
 use std::vec;
 
-use ndarray::prelude::{ArrayBase, Dim};
-use ndarray::{Array2, OwnedRepr, ShapeBuilder};
+use bitvec::array::BitArray;
+use bitvec::bitarr;
+use bitvec::prelude::Lsb0;
 use rand::prelude::SliceRandom;
 use rand_xoshiro::rand_core::SeedableRng;
 use rand_xoshiro::Xoshiro256Plus;
@@ -23,7 +24,7 @@ const EPOCHS: i64 = 1;
 const NUM_CLAUSES: i64 = 128;
 const T: i64 = 8;
 const R: f64 = 0.89;
-const NEG_R: f64 = 1.0 - 0.89;
+const NEG_R: f64 = 1.0 - R;
 const L: i8 = 16;
 const BEST_TMS_SIZE: i64 = 500;
 const STATES_MIN: u8 = 0;
@@ -35,6 +36,13 @@ const CLAUSE_SIZE: usize = 4704; // 28*28*3*2
 const SAMPLES: Option<usize> = None;
 
 fn main() {
+    // let a: BitArray = bitarr![0, 1, 0, 0, 1];
+    // let b: BitArray = bitarr![0, 1, 0, 0, 0];
+
+    // let c = a & b;
+    // c is 64 bits long
+
+    // println!("{:#?}", c.len());
     let train_path = "mnist/mnist_train.csv";
     let test_path = "mnist/mnist_test.csv";
 
@@ -113,8 +121,8 @@ struct TATeam {
     include_limit: u8,
     state_min: u8,
     state_max: u8,
-    positive_clauses: Array2<u8>,
-    negative_clauses: Array2<u8>,
+    positive_clauses: Vec<u8>,
+    negative_clauses: Vec<u8>,
     positive_included_literals: Vec<Vec<u16>>,
     negative_included_literals: Vec<Vec<u16>>,
     clause_size: i64,
@@ -128,18 +136,16 @@ impl TATeam {
         state_min: u8,
         state_max: u8,
     ) -> Self {
-        let positive_clauses = Array2::from_elem(
-            (clause_size as usize, (clauses_num / 2) as usize).f(),
-            include_limit - 1,
-        );
+        let positive_clauses: Vec<u8> =
+            vec![include_limit - 1; CLAUSE_SIZE * (clauses_num / 2) as usize];
+        let negative_clauses: Vec<u8> =
+            vec![include_limit - 1; CLAUSE_SIZE * (clauses_num / 2) as usize];
 
-        let negative_clauses = Array2::from_elem(
-            (clause_size as usize, (clauses_num / 2) as usize).f(),
-            include_limit - 1,
-        );
+        let positive_included_literals = vec![vec![0; CLAUSE_SIZE]; (clauses_num / 2) as usize];
+        let negative_included_literals = vec![vec![0; CLAUSE_SIZE]; (clauses_num / 2) as usize];
 
-        let positive_included_literals = vec![vec![]; (clauses_num / 2) as usize];
-        let negative_included_literals = vec![vec![]; (clauses_num / 2) as usize];
+        assert_eq!(negative_included_literals.len(), 64);
+        assert_eq!(negative_clauses.len(), 4704 * 64);
 
         Self {
             include_limit,
@@ -463,7 +469,6 @@ fn predict_batch_3(tm: &TMClassifier, x: &TMInputBatch) -> Vec<Option<usize>> {
 
     for (cls, ta) in tm.clauses.iter().enumerate() {
         let (pos, neg) = vote_batch(ta, x);
-
         for (i, (p, n)) in pos.iter().zip(neg.iter()).enumerate() {
             let v = p - n;
             if v > best_vote[i] {
@@ -491,6 +496,22 @@ fn vote(ta: &TATeam, x: &TMInput) -> (i64, i64) {
     (pos, neg)
 }
 
+fn get_v(t: i64, ta_team: &TATeam, x: &TMInput) -> i64 {
+    let (pos, neg) = vote(ta_team, x);
+    (pos - neg).clamp(-t, t)
+}
+
+fn get_update_value(t: i64, ta_team: &TATeam, x: &TMInput, positive: bool) -> f64 {
+    let v: i64 = get_v(t, ta_team, x);
+    let update: f64 = if positive {
+        (t - v) as f64
+    } else {
+        (t + v) as f64
+    } / (t * 2) as f64;
+
+    update
+}
+
 #[allow(clippy::too_many_arguments)]
 fn feedback_positive(
     tm: &mut TMClassifier,
@@ -498,28 +519,18 @@ fn feedback_positive(
     y: usize,
     positive: bool,
     rng: &mut Xoshiro256Plus,
-    j: &mut usize,
     row: &mut u16,
     count: &mut usize,
     literals_buffer: &mut [u16; 4704],
 ) {
     let ta_team: &mut TATeam = tm.clauses.get_mut(y).unwrap();
 
-    let (pos, neg) = vote(ta_team, x);
-    let v: i64 = (pos - neg).clamp(-tm.t, tm.t);
+    let update: f64 = get_update_value(tm.t, ta_team, x, positive);
 
-    let clauses1: &mut ArrayBase<OwnedRepr<u8>, Dim<[usize; 2]>> = &mut ta_team.positive_clauses;
-    let clauses2: &mut ArrayBase<OwnedRepr<u8>, Dim<[usize; 2]>> = &mut ta_team.negative_clauses;
-    let literals1 = &mut ta_team.positive_included_literals;
-    let literals2 = &mut ta_team.negative_included_literals;
-
-    // assert_eq!(clauses1.shape(), [4704, 1024]);
-
-    let update: f64 = if positive {
-        (tm.t - v) as f64
-    } else {
-        (tm.t + v) as f64
-    } / (tm.t * 2) as f64;
+    let clauses1 = &mut ta_team.positive_clauses;
+    let clauses2 = &mut ta_team.negative_clauses;
+    let literals1: &mut Vec<Vec<u16>> = &mut ta_team.positive_included_literals;
+    let literals2: &mut Vec<Vec<u16>> = &mut ta_team.negative_included_literals;
 
     feedback(
         x,
@@ -529,7 +540,6 @@ fn feedback_positive(
         literals2,
         update,
         rng,
-        j,
         row,
         count,
         literals_buffer,
@@ -543,25 +553,18 @@ fn feedback_negative(
     y: usize,
     positive: bool,
     rng: &mut Xoshiro256Plus,
-    j: &mut usize,
     row: &mut u16,
     count: &mut usize,
     literals_buffer: &mut [u16; 4704],
 ) {
     let ta_team: &mut TATeam = tm.clauses.get_mut(y).expect("OOB");
-    let (pos, neg) = vote(ta_team, x);
-    let v: i64 = (pos - neg).clamp(-tm.t, tm.t);
 
-    let update: f64 = if positive {
-        (tm.t - v) as f64
-    } else {
-        (tm.t + v) as f64
-    } / (tm.t * 2) as f64;
+    let update: f64 = get_update_value(tm.t, ta_team, x, positive);
 
-    let clauses1: &mut ArrayBase<OwnedRepr<u8>, Dim<[usize; 2]>> = &mut ta_team.negative_clauses;
-    let clauses2: &mut ArrayBase<OwnedRepr<u8>, Dim<[usize; 2]>> = &mut ta_team.positive_clauses;
-    let literals1 = &mut ta_team.negative_included_literals;
-    let literals2 = &mut ta_team.positive_included_literals;
+    let clauses1 = &mut ta_team.negative_clauses;
+    let clauses2 = &mut ta_team.positive_clauses;
+    let literals1: &mut Vec<Vec<u16>> = &mut ta_team.negative_included_literals;
+    let literals2: &mut Vec<Vec<u16>> = &mut ta_team.positive_included_literals;
 
     feedback(
         x,
@@ -571,87 +574,11 @@ fn feedback_negative(
         literals2,
         update,
         rng,
-        j,
         row,
         count,
         literals_buffer,
     );
 }
-
-// fn predict(tm: &TMClassifier, x: &TMInput) -> Option<usize> {
-//     let mut best_vote: i64 = i64::MIN;
-//     let mut best_cls: Option<usize> = None;
-
-//     for (cls, ta) in tm.clauses.iter().enumerate() {
-//         let (pos, neg) = vote(ta, x);
-//         let v: i64 = (neg - pos).clamp(-tm.t, tm.t);
-
-//         if v > best_vote {
-//             best_vote = v;
-//             best_cls = Some(cls);
-//         }
-//     }
-
-//     best_cls
-// }
-
-// function predict(tm::AbstractTMClassifier, x::TMInputBatch)::Vector{Any}
-//     best_vote::Vector{Int64} = fill(typemin(Int64), x.batch_size)
-//     best_cls::Vector{Any} = fill(nothing, x.batch_size)
-//     @inbounds for (cls, ta) in tm.clauses
-//         pos_sum, neg_sum = vote(ta, x)
-//         @inbounds for i in 1:x.batch_size
-//             v::Int64 = pos_sum[i] - neg_sum[i]
-//             if v > best_vote[i]
-//                 best_vote[i] = v
-//                 best_cls[i] = cls
-//             end
-//         end
-//     end
-//     return best_cls
-// end
-
-// fn predict_batch_2(tm: &TMClassifier, x: &[TMInput]) -> Vec<Option<usize>> {
-//     let mut best_vote: Vec<i64> = vec![i64::MIN; x.len()];
-//     let mut best_cls: Vec<Option<usize>> = vec![None; x.len()];
-
-//     for (i, x) in x.iter().enumerate() {
-//         for (clause, ta) in tm.clauses.iter().enumerate() {
-//             let (pos, neg) = vote(ta, x);
-//             let v = pos - neg;
-//             if v > best_vote[i] {
-//                 best_vote[i] = v;
-//                 best_cls[i] = Some(clause);
-//             }
-//         }
-//     }
-
-//     best_cls
-// }
-
-// fn predict_batch_2(tm: &TMClassifier, x: &[TMInput]) -> Vec<Option<usize>> {
-//     // Use par_iter().enumerate() to iterate over the inputs in parallel
-//     x.par_iter()
-//         .enumerate()
-//         .map(|(i, x)| {
-//             let mut best_vote: i64 = i64::MIN;
-//             let mut best_cls: Option<usize> = None;
-//             for (clause, ta) in tm.clauses.iter().enumerate() {
-//                 let (pos, neg) = vote(ta, x);
-//                 let v = pos - neg;
-//                 // Use a scoped lock or atomic operations to safely update the best_vote and best_cls
-//                 // Since we are in a parallel context, we need to ensure that the access to the vectors is thread-safe
-//                 let mut best_vote_i = best_vote;
-//                 let mut best_cls_i = best_cls;
-//                 if v > best_vote_i {
-//                     best_vote_i = v;
-//                     best_cls_i = Some(clause);
-//                 }
-//             }
-//             best_cls
-//         })
-//         .collect()
-// }
 
 fn predict_batches(tm: &TMClassifier, x: &[TMInputBatch]) -> Vec<Option<usize>> {
     let mut best_vote: Vec<i64> = vec![i64::MIN; x.len()];
@@ -680,10 +607,9 @@ fn predict_batch_2(tm: &TMClassifier, x: &[TMInput]) -> Vec<Option<usize>> {
     let mut best_vote: Vec<i64> = vec![i64::MIN; x.len()];
     let mut best_cls: Vec<Option<usize>> = vec![None; x.len()];
 
-    for (cls, ta) in tm.clauses.iter().enumerate() {
+    for (cls, ta_team) in tm.clauses.iter().enumerate() {
         for (i, x) in x.iter().enumerate() {
-            let (pos, neg) = vote(ta, x);
-            let v = pos - neg;
+            let v: i64 = get_v(tm.t, ta_team, x);
             if v > best_vote[i] {
                 best_vote[i] = v;
                 best_cls[i] = Some(cls);
@@ -718,7 +644,6 @@ fn train(
         classes.shuffle(rng);
     }
 
-    let mut j = 0usize;
     let mut row = 0u16;
     let mut count = 0usize;
     let mut literals_buffer: [u16; 4704] = [0u16; CLAUSE_SIZE];
@@ -731,7 +656,6 @@ fn train(
                 y,
                 true,
                 rng,
-                &mut j,
                 &mut row,
                 &mut count,
                 &mut literals_buffer,
@@ -742,7 +666,6 @@ fn train(
                 *cls,
                 false,
                 rng,
-                &mut j,
                 &mut row,
                 &mut count,
                 &mut literals_buffer,
@@ -958,19 +881,6 @@ fn train_model(
 mod tests {
 
     use super::*;
-    use ndarray::prelude::*;
-    use ndarray::{concatenate, Axis};
-
-    #[test]
-    fn test_stack() {
-        let a: ArrayBase<OwnedRepr<f64>, Dim<[usize; 2]>> = array![[3., 7., 8.], [5., 2., 4.]];
-        let b: ArrayBase<OwnedRepr<f64>, Dim<[usize; 2]>> = array![[1., 9., 0.], [5., 4., 1.]];
-        let expected: ArrayBase<OwnedRepr<f64>, Dim<[usize; 2]>> = concatenate![Axis(1), a, b];
-
-        let c = concatenate(Axis(1), &[a.view(), b.view()]).unwrap();
-
-        // assert_eq!(expected, c)
-    }
 
     #[test]
     fn test_bit_set() {
