@@ -19,18 +19,20 @@ use crate::feedback::feedback;
 
 const EPOCHS: i64 = 1;
 // const NUM_CLAUSES: i64 = 2048;
-const NUM_CLAUSES: i64 = 72;
-const T: i64 = 32;
-const R: f64 = 0.94;
-const NEG_R: f64 = 1.0 - 0.94;
-const L: i8 = 12;
+// const NUM_CLAUSES: i64 = 72;
+const NUM_CLAUSES: i64 = 128;
+const T: i64 = 8;
+const R: f64 = 0.89;
+const NEG_R: f64 = 1.0 - 0.89;
+const L: i8 = 16;
 const BEST_TMS_SIZE: i64 = 500;
 const STATES_MIN: u8 = 0;
 const STATES_NUM: u8 = 255;
 const INCLUDE_LIMIT: u8 = 128;
 const CLAUSE_SIZE: usize = 4704; // 28*28*3*2
 
-const SAMPLES: Option<usize> = Some(1000);
+// const SAMPLES: Option<usize> = Some(1000);
+const SAMPLES: Option<usize> = None;
 
 fn main() {
     let train_path = "mnist/mnist_train.csv";
@@ -46,7 +48,7 @@ fn main() {
     );
 
     // Training the TM model
-    let mut tm = TMClassifier::new(NUM_CLAUSES, T, R, L, STATES_NUM as i64, INCLUDE_LIMIT);
+    let mut tm = TMClassifier::new(NUM_CLAUSES, T, R, L, STATES_NUM, INCLUDE_LIMIT);
 
     let (_best_accuracy, _best_tms) = train_model(
         &mut tm,
@@ -123,8 +125,8 @@ impl TATeam {
         clause_size: i64,
         clauses_num: i64,
         include_limit: u8,
-        state_min: i64,
-        state_max: i64,
+        state_min: u8,
+        state_max: u8,
     ) -> Self {
         let positive_clauses = Array2::from_elem(
             (clause_size as usize, (clauses_num / 2) as usize).f(),
@@ -136,20 +138,13 @@ impl TATeam {
             include_limit - 1,
         );
 
-        // assert_eq!(positive_clauses.shape(), [4704, 1024]);
-
-        // let positive_included_literals =
-        //     vec![Vec::with_capacity(CLAUSE_SIZE); (clauses_num / 2) as usize];
-        // let negative_included_literals =
-        //     vec![Vec::with_capacity(CLAUSE_SIZE); (clauses_num / 2) as usize];
-
         let positive_included_literals = vec![vec![]; (clauses_num / 2) as usize];
         let negative_included_literals = vec![vec![]; (clauses_num / 2) as usize];
 
         Self {
             include_limit,
-            state_min: state_min as u8,
-            state_max: state_max as u8,
+            state_min,
+            state_max,
             positive_clauses,
             negative_clauses,
             positive_included_literals,
@@ -166,13 +161,13 @@ struct TMClassifier {
     r: f64,
     l: i8,
     include_limit: u8,
-    state_min: i64,
-    state_max: i64,
+    state_min: u8,
+    state_max: u8,
     clauses: Vec<TATeam>, // clauses: HashMap<usize, TATeam>
 }
 
 impl TMClassifier {
-    fn new(clauses_num: i64, t: i64, r: f64, l: i8, states_num: i64, include_limit: u8) -> Self {
+    fn new(clauses_num: i64, t: i64, r: f64, l: i8, states_num: u8, include_limit: u8) -> Self {
         Self {
             clauses_num,
             t,
@@ -511,7 +506,7 @@ fn feedback_positive(
     let ta_team: &mut TATeam = tm.clauses.get_mut(y).unwrap();
 
     let (pos, neg) = vote(ta_team, x);
-    let v: i64 = (neg - pos).clamp(-tm.t, tm.t);
+    let v: i64 = (pos - neg).clamp(-tm.t, tm.t);
 
     let clauses1: &mut ArrayBase<OwnedRepr<u8>, Dim<[usize; 2]>> = &mut ta_team.positive_clauses;
     let clauses2: &mut ArrayBase<OwnedRepr<u8>, Dim<[usize; 2]>> = &mut ta_team.negative_clauses;
@@ -555,7 +550,7 @@ fn feedback_negative(
 ) {
     let ta_team: &mut TATeam = tm.clauses.get_mut(y).expect("OOB");
     let (pos, neg) = vote(ta_team, x);
-    let v: i64 = (neg - pos).clamp(-tm.t, tm.t);
+    let v: i64 = (pos - neg).clamp(-tm.t, tm.t);
 
     let update: f64 = if positive {
         (tm.t - v) as f64
@@ -754,6 +749,8 @@ fn train(
             );
         }
     }
+
+    // println!("{:#?}", tm.clauses[0].positive_included_literals.len());
 }
 
 fn train_batch(tm: &mut TMClassifier, x: &[TMInput], y: &[usize], shuffle: bool) {
@@ -776,11 +773,11 @@ fn train_batch(tm: &mut TMClassifier, x: &[TMInput], y: &[usize], shuffle: bool)
 
     let mut classes: [usize; 10] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
 
-    for (input, output) in data {
+    for (i, (input, output)) in data.iter().enumerate() {
         // Here we call the train function for each input-output pair
 
         // let now = Instant::now();
-        train(tm, input, *output, &mut classes, shuffle, &mut rng);
+        train(tm, input, **output, &mut classes, shuffle, &mut rng);
         // let elapsed = now.elapsed();
         // println!("Sample: {i} elapsed: {:#?}", elapsed);
     }
@@ -874,7 +871,7 @@ fn train_model(
     let num_cpus: u32 = sys_info::cpu_num().unwrap();
 
     if verbose > 0 {
-        println!("\nRunning in {} threads.", num_cpus);
+        // println!("\nRunning in {} threads.", num_cpus);
         println!(
             "Accuracy over {} epochs (Clauses: {}, T: {}, R: {}, L: {}, states_num: {}, include_limit: {}):\n",
             epochs,
