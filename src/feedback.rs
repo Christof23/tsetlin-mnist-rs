@@ -58,24 +58,23 @@ fn feedback1(
             let literals = literals1[j].as_slice();
             match check_clause(x, literals) {
                 true => {
-                    if literals.len() <= L as usize {
-                        for (c, x) in clauses.iter_mut().zip(x.x.iter()) {
-                            if *x && *c < STATES_NUM {
-                                *c += 1;
-                            }
-                        }
-                    }
+                    for (clause, &is_x_true) in clauses.iter_mut().zip(x.x.iter()) {
+                        let is_within_literal_limit = literals.len() <= L as usize;
+                        let can_increment_clause = is_x_true && *clause < STATES_NUM;
+                        let can_decrement_clause =
+                            !is_x_true && *clause < INCLUDE_LIMIT && *clause > STATES_MIN;
 
-                    for (c, x) in clauses.iter_mut().zip(x.x.iter()) {
-                        if rng.gen_bool(NEG_R) && !*x && *c < INCLUDE_LIMIT && *c > STATES_MIN {
-                            *c -= 1;
+                        if is_within_literal_limit && can_increment_clause {
+                            *clause += 1;
+                        } else if rng.gen_bool(NEG_R) && can_decrement_clause {
+                            *clause -= 1;
                         }
                     }
                 }
                 false => {
-                    for c in &mut *clauses {
-                        if rng.gen_bool(NEG_R) && *c > STATES_MIN {
-                            *c -= 1;
+                    for clause in clauses.iter_mut() {
+                        if *clause > STATES_MIN && rng.gen_bool(NEG_R) {
+                            *clause -= 1;
                         }
                     }
                 }
@@ -83,8 +82,8 @@ fn feedback1(
 
             *count = 0;
             *row = 0;
-            for c in clauses {
-                if *c >= INCLUDE_LIMIT {
+            for clause in clauses {
+                if *clause >= INCLUDE_LIMIT {
                     literals_buffer[*count] = *row;
                     *count += 1;
                 }
