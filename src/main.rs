@@ -7,9 +7,6 @@ use std::str::FromStr;
 use std::time::Instant;
 use std::vec;
 
-use bitvec::array::BitArray;
-use bitvec::bitarr;
-use bitvec::prelude::Lsb0;
 use rand::prelude::SliceRandom;
 use rand_xoshiro::rand_core::SeedableRng;
 use rand_xoshiro::Xoshiro256Plus;
@@ -727,51 +724,6 @@ fn diff_count(tm: &TMClassifier) -> (i64, i64, i64) {
 
     (pos_diff, neg_diff, literals)
 }
-
-// fn compile(tm: &TMClassifier, verbose: u8) -> TMClassifierCompiled {
-//     if verbose > 0 {
-//         println!("Compiling model... ");
-//     }
-
-//     let mut tmc = TMClassifierCompiled::new(tm.clauses_num, tm.t, tm.r, tm.l);
-
-//     for (cls, ta) in tm.clauses.iter().enumerate() {
-//         tmc.clauses.insert(cls, TATeamCompiled::new(tm.clauses_num));
-//         for (j, c) in ta.positive_clauses.axis_iter(Axis(1)).enumerate() {
-//             tmc.clauses.get_mut(cls).unwrap().positive_included_literals[j] = c
-//                 .iter()
-//                 .enumerate()
-//                 .filter_map(|(i, &value)| {
-//                     if value >= ta.include_limit {
-//                         Some(i as u16)
-//                     } else {
-//                         None
-//                     }
-//                 })
-//                 .collect();
-//         }
-
-//         for (j, c) in ta.negative_clauses.axis_iter(Axis(1)).enumerate() {
-//             tmc.clauses.get_mut(cls).unwrap().negative_included_literals[j] = c
-//                 .iter()
-//                 .enumerate()
-//                 .filter_map(|(i, &value)| {
-//                     if value >= ta.include_limit {
-//                         Some(i as u16)
-//                     } else {
-//                         None
-//                     }
-//                 })
-//                 .collect();
-//         }
-//     }
-
-//     if verbose > 0 {
-//         println!("Done.");
-//     }
-
-//     tmc
-// }
 
 #[allow(clippy::too_many_arguments)]
 fn train_model(
