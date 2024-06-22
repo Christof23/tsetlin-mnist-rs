@@ -15,7 +15,7 @@ mod feedback;
 
 use crate::feedback::feedback;
 
-const EPOCHS: i64 = 1;
+const EPOCHS: i64 = 200;
 // const NUM_CLAUSES: i64 = 2048;
 // const NUM_CLAUSES: i64 = 72;
 const NUM_CLAUSES: i64 = 128;
@@ -232,7 +232,7 @@ impl TMInput {
         let mut x: Vec<bool> = s
             .split(',')
             .map(|a| a.parse::<f64>().expect("Failed to parse float"))
-            .flat_map(|num| vec![num > 0.0, num > 0.33, num > 0.66])
+            .flat_map(|num| vec![num > 0.0, num > 84.0, num > 169.0])  // 0.0, 0.33 and 0.66 in 0-255 range.
             .collect::<Vec<_>>();
 
         if negate.unwrap_or(true) {
@@ -678,7 +678,7 @@ fn train_batch(tm: &mut TMClassifier, x: &[TMInput], y: &[usize], shuffle: bool)
     // let mut rng: XorShiftRng = XorShiftRng::seed_from_u64(123456789);
 
     // let mut rng: SmallRng = rand::rngs::SmallRng::from_entropy();
-    let mut rng: Xoshiro256Plus = Xoshiro256Plus::seed_from_u64(0);
+    let mut rng: Xoshiro256Plus = Xoshiro256Plus::seed_from_u64(42);
 
     // If not initialized yet
     if tm.clauses.is_empty() {
