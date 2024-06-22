@@ -232,7 +232,7 @@ impl TMInput {
         let mut x: Vec<bool> = s
             .split(',')
             .map(|a| a.parse::<f64>().expect("Failed to parse float"))
-            .flat_map(|num| vec![num > 0.0, num > 0.33, num > 0.66])
+            .flat_map(|num| vec![num > 0.0, num > 84.0, num > 169.0])  // 0.0, 0.33 and 0.66 in 0-255 range.
             .collect::<Vec<_>>();
 
         if negate.unwrap_or(true) {
