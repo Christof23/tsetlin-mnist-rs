@@ -16,8 +16,6 @@ mod feedback;
 use crate::feedback::feedback;
 
 const EPOCHS: i64 = 200;
-// const NUM_CLAUSES: i64 = 2048;
-// const NUM_CLAUSES: i64 = 72;
 const NUM_CLAUSES: i64 = 128;
 const T: i64 = 8;
 const R: f64 = 0.89;
@@ -29,7 +27,6 @@ const STATES_NUM: u8 = 255;
 const INCLUDE_LIMIT: u8 = 128;
 const CLAUSE_SIZE: usize = 4704; // 28*28*3*2
 
-// const SAMPLES: Option<usize> = Some(1000);
 const SAMPLES: Option<usize> = None;
 
 fn main() {
@@ -232,7 +229,7 @@ impl TMInput {
         let mut x: Vec<bool> = s
             .split(',')
             .map(|a| a.parse::<f64>().expect("Failed to parse float"))
-            .flat_map(|num| vec![num > 0.0, num > 84.0, num > 169.0])  // 0.0, 0.33 and 0.66 in 0-255 range.
+            .flat_map(|num| vec![num > 0.0, num > 84.0, num > 169.0]) // 0.0, 0.33 and 0.66 in 0-255 range.
             .collect::<Vec<_>>();
 
         if negate.unwrap_or(true) {
@@ -478,24 +475,17 @@ fn predict_batch_3(tm: &TMClassifier, x: &TMInputBatch) -> Vec<Option<usize>> {
     best_cls
 }
 
-fn vote(ta: &TATeam, x: &TMInput) -> (i64, i64) {
-    let pos = ta
-        .positive_included_literals
+fn vote(ta: &TATeam, x: &TMInput) -> i64 {
+    ta.positive_included_literals
         .iter()
-        .map(|literals| check_clause(x, literals) as i64)
-        .sum();
-    let neg = ta
-        .negative_included_literals
-        .iter()
-        .map(|literals| check_clause(x, literals) as i64)
-        .sum();
-
-    (pos, neg)
+        .zip(ta.negative_included_literals.iter())
+        .map(|(pos_lit, neg_lit)| check_clause(x, pos_lit) as i64 - check_clause(x, neg_lit) as i64)
+        .sum()
 }
 
 fn get_v(t: i64, ta_team: &TATeam, x: &TMInput) -> i64 {
-    let (pos, neg) = vote(ta_team, x);
-    (pos - neg).clamp(-t, t)
+    let v: i64 = vote(ta_team, x);
+    v.clamp(-t, t)
 }
 
 fn get_update_value(t: i64, ta_team: &TATeam, x: &TMInput, positive: bool) -> f64 {
