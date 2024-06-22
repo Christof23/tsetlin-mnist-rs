@@ -15,7 +15,7 @@ mod feedback;
 
 use crate::feedback::feedback;
 
-const EPOCHS: i64 = 1;
+const EPOCHS: i64 = 200;
 // const NUM_CLAUSES: i64 = 2048;
 // const NUM_CLAUSES: i64 = 72;
 const NUM_CLAUSES: i64 = 128;
@@ -678,7 +678,7 @@ fn train_batch(tm: &mut TMClassifier, x: &[TMInput], y: &[usize], shuffle: bool)
     // let mut rng: XorShiftRng = XorShiftRng::seed_from_u64(123456789);
 
     // let mut rng: SmallRng = rand::rngs::SmallRng::from_entropy();
-    let mut rng: Xoshiro256Plus = Xoshiro256Plus::seed_from_u64(0);
+    let mut rng: Xoshiro256Plus = Xoshiro256Plus::seed_from_u64(42);
 
     // If not initialized yet
     if tm.clauses.is_empty() {
