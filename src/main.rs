@@ -209,70 +209,6 @@ fn get_update_value(t: i64, ta_team: &TATeam, x: &TMInput, positive: bool) -> f6
     update
 }
 
-#[allow(clippy::too_many_arguments)]
-fn feedback_positive(
-    tm: &mut TMClassifier,
-    x: &TMInput,
-    y: usize,
-    positive: bool,
-    rng: &mut Xoshiro256Plus,
-    count: &mut usize,
-    literals_buffer: &mut [u16; 4704],
-) {
-    let ta_team: &mut TATeam = tm.clauses.get_mut(y).unwrap();
-
-    let update: f64 = get_update_value(tm.t, ta_team, x, positive);
-
-    let clauses1 = &mut ta_team.positive_clauses;
-    let clauses2 = &mut ta_team.negative_clauses;
-    let literals1: &mut Vec<Vec<u16>> = &mut ta_team.positive_included_literals;
-    let literals2: &mut Vec<Vec<u16>> = &mut ta_team.negative_included_literals;
-
-    feedback(
-        x,
-        clauses1,
-        clauses2,
-        literals1,
-        literals2,
-        update,
-        rng,
-        count,
-        literals_buffer,
-    );
-}
-
-#[allow(clippy::too_many_arguments)]
-fn feedback_negative(
-    tm: &mut TMClassifier,
-    x: &TMInput,
-    y: usize,
-    positive: bool,
-    rng: &mut Xoshiro256Plus,
-    count: &mut usize,
-    literals_buffer: &mut [u16; 4704],
-) {
-    if let Some(ta_team) = tm.clauses.get_mut(y) {
-        let update: f64 = get_update_value(tm.t, ta_team, x, positive);
-
-        let clauses1 = &mut ta_team.negative_clauses;
-        let clauses2 = &mut ta_team.positive_clauses;
-        let literals1: &mut Vec<Vec<u16>> = &mut ta_team.negative_included_literals;
-        let literals2: &mut Vec<Vec<u16>> = &mut ta_team.positive_included_literals;
-
-        feedback(
-            x,
-            clauses1,
-            clauses2,
-            literals1,
-            literals2,
-            update,
-            rng,
-            count,
-            literals_buffer,
-        );
-    }
-}
-
 fn predict_batch_2(tm: &TMClassifier, x: &[TMInput]) -> Vec<Option<usize>> {
     let mut best_vote: Vec<i64> = vec![i64::MIN; x.len()];
     let mut best_cls: Vec<Option<usize>> = vec![None; x.len()];
@@ -319,8 +255,35 @@ fn train(
 
     for cls in classes {
         if *cls != y {
-            feedback_positive(tm, x, y, true, rng, &mut count, &mut literals_buffer);
-            feedback_negative(tm, x, *cls, false, rng, &mut count, &mut literals_buffer);
+            let ta_team: &mut TATeam = tm.clauses.get_mut(y).unwrap();
+            let update: f64 = get_update_value(tm.t, ta_team, x, true);
+
+            feedback(
+                x,
+                &mut ta_team.positive_clauses,
+                &mut ta_team.negative_clauses,
+                &mut ta_team.positive_included_literals,
+                &mut ta_team.negative_included_literals,
+                update,
+                rng,
+                &mut count,
+                &mut literals_buffer,
+            );
+
+            let ta_team: &mut TATeam = tm.clauses.get_mut(*cls).unwrap();
+            let update: f64 = get_update_value(tm.t, ta_team, x, false);
+
+            feedback(
+                x,
+                &mut ta_team.negative_clauses,
+                &mut ta_team.positive_clauses,
+                &mut ta_team.negative_included_literals,
+                &mut ta_team.positive_included_literals,
+                update,
+                rng,
+                &mut count,
+                &mut literals_buffer,
+            );
         }
     }
 

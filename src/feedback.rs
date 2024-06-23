@@ -8,6 +8,7 @@ use crate::{
 };
 
 #[allow(clippy::too_many_arguments)]
+// #[inline]
 pub fn feedback(
     x: &TMInput,
     clauses1: &mut [u8],
@@ -19,16 +20,16 @@ pub fn feedback(
     count: &mut usize,
     literals_buffer: &mut [u16; 4704],
 ) {
-    feedback1(clauses1, update, literals1, x, rng, literals_buffer, count);
-    feedback2(clauses2, rng, update, literals2, x, literals_buffer, count);
+    feedback1(x, clauses1, literals1, update, rng, literals_buffer, count);
+    feedback2(x, clauses2, literals2, rng, update, literals_buffer, count);
 }
 
 #[allow(clippy::too_many_arguments)]
 fn feedback1(
-    clauses1: &mut [u8],
-    update: f64,
-    literals1: &mut [Vec<u16>],
     x: &TMInput,
+    clauses1: &mut [u8],
+    literals1: &mut [Vec<u16>],
+    update: f64,
     rng: &mut Xoshiro256Plus,
     literals_buffer: &mut [u16; CLAUSE_SIZE],
     count: &mut usize,
@@ -85,11 +86,11 @@ fn feedback1(
 #[allow(clippy::too_many_arguments)]
 
 fn feedback2(
+    x: &TMInput,
     clauses2: &mut [u8],
+    literals2: &mut [Vec<u16>],
     rng: &mut Xoshiro256Plus,
     update: f64,
-    literals2: &mut [Vec<u16>],
-    x: &TMInput,
     literals_buffer: &mut [u16; CLAUSE_SIZE],
     count: &mut usize,
 ) {
