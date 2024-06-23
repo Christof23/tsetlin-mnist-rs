@@ -108,7 +108,7 @@ fn feedback2(
     row: &mut u16,
     count: &mut usize,
 ) {
-    for (j, mut clauses) in clauses2.chunks_exact_mut(CLAUSE_SIZE).enumerate() {
+    for (j, clauses) in clauses2.chunks_exact_mut(CLAUSE_SIZE).enumerate() {
         let literals: &[u16] = literals2[j].as_slice();
 
         if check_clause(x, literals) && rng.gen_bool(update) {

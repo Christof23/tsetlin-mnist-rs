@@ -4,12 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [lints.rust]
-unused = "allow"
+unused = "warn"
 
 [profile.release]
 debug = true
-# codegen-units = 1
-# lto = "fat"
+codegen-units = 1
+lto = "fat"
 # panic = "abort"
 
 [dependencies]
