@@ -216,7 +216,6 @@ fn feedback_positive(
     y: usize,
     positive: bool,
     rng: &mut Xoshiro256Plus,
-    row: &mut u16,
     count: &mut usize,
     literals_buffer: &mut [u16; 4704],
 ) {
@@ -237,7 +236,6 @@ fn feedback_positive(
         literals2,
         update,
         rng,
-        row,
         count,
         literals_buffer,
     );
@@ -250,31 +248,29 @@ fn feedback_negative(
     y: usize,
     positive: bool,
     rng: &mut Xoshiro256Plus,
-    row: &mut u16,
     count: &mut usize,
     literals_buffer: &mut [u16; 4704],
 ) {
-    let ta_team: &mut TATeam = tm.clauses.get_mut(y).expect("OOB");
+    if let Some(ta_team) = tm.clauses.get_mut(y) {
+        let update: f64 = get_update_value(tm.t, ta_team, x, positive);
 
-    let update: f64 = get_update_value(tm.t, ta_team, x, positive);
+        let clauses1 = &mut ta_team.negative_clauses;
+        let clauses2 = &mut ta_team.positive_clauses;
+        let literals1: &mut Vec<Vec<u16>> = &mut ta_team.negative_included_literals;
+        let literals2: &mut Vec<Vec<u16>> = &mut ta_team.positive_included_literals;
 
-    let clauses1 = &mut ta_team.negative_clauses;
-    let clauses2 = &mut ta_team.positive_clauses;
-    let literals1: &mut Vec<Vec<u16>> = &mut ta_team.negative_included_literals;
-    let literals2: &mut Vec<Vec<u16>> = &mut ta_team.positive_included_literals;
-
-    feedback(
-        x,
-        clauses1,
-        clauses2,
-        literals1,
-        literals2,
-        update,
-        rng,
-        row,
-        count,
-        literals_buffer,
-    );
+        feedback(
+            x,
+            clauses1,
+            clauses2,
+            literals1,
+            literals2,
+            update,
+            rng,
+            count,
+            literals_buffer,
+        );
+    }
 }
 
 fn predict_batch_2(tm: &TMClassifier, x: &[TMInput]) -> Vec<Option<usize>> {
@@ -318,32 +314,13 @@ fn train(
         classes.shuffle(rng);
     }
 
-    let mut row = 0u16;
     let mut count = 0usize;
     let mut literals_buffer: [u16; 4704] = [0u16; CLAUSE_SIZE];
 
     for cls in classes {
         if *cls != y {
-            feedback_positive(
-                tm,
-                x,
-                y,
-                true,
-                rng,
-                &mut row,
-                &mut count,
-                &mut literals_buffer,
-            );
-            feedback_negative(
-                tm,
-                x,
-                *cls,
-                false,
-                rng,
-                &mut row,
-                &mut count,
-                &mut literals_buffer,
-            );
+            feedback_positive(tm, x, y, true, rng, &mut count, &mut literals_buffer);
+            feedback_negative(tm, x, *cls, false, rng, &mut count, &mut literals_buffer);
         }
     }
 
