@@ -18,7 +18,7 @@ pub fn feedback(
     update: f64,
     rng: &mut Xoshiro256Plus,
     count: &mut usize,
-    literals_buffer: &mut [u16; 4704],
+    literals_buffer: &mut [u16; CLAUSE_SIZE],
 ) {
     feedback1(x, clauses1, literals1, update, rng, literals_buffer, count);
     feedback2(x, clauses2, literals2, rng, update, literals_buffer, count);
