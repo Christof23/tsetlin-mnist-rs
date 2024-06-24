@@ -37,7 +37,6 @@ pub fn feedback(
     );
 }
 
-#[allow(clippy::too_many_arguments)]
 fn feedback1(
     tm_input: &TMInput,
     clauses1: &mut [u8],
@@ -95,8 +94,6 @@ fn feedback1(
         }
     }
 }
-
-#[allow(clippy::too_many_arguments)]
 
 fn feedback2(
     tm_input: &TMInput,
