@@ -4,14 +4,14 @@ use std::time::Instant;
 use std::vec;
 
 use rand::prelude::SliceRandom;
-use rand_xoshiro::rand_core::SeedableRng;
-use rand_xoshiro::Xoshiro256Plus;
+use rand::SeedableRng;
+use wyhash::WyRng;
 
 mod feedback;
 
 use crate::feedback::feedback;
 
-const EPOCHS: i64 = 1;
+const EPOCHS: i64 = 200;
 const NUM_CLAUSES: i64 = 128;
 const T: i64 = 8;
 const R: f64 = 0.89;
@@ -23,7 +23,7 @@ const STATES_NUM: u8 = 255;
 const INCLUDE_LIMIT: u8 = 128;
 const CLAUSE_SIZE: usize = 4704; // 28*28*3*2
 
-const SAMPLES: Option<usize> = Some(1000);
+const SAMPLES: Option<usize> = None;
 
 fn main() {
     let train_path = "mnist/mnist_train.csv";
@@ -111,7 +111,7 @@ struct TMClassifier {
     l: i8,
     include_limit: u8,
     state_max: u8,
-    clauses: Vec<TATeam>, // clauses: HashMap<usize, TATeam>
+    clauses: Vec<TATeam>,
 }
 
 impl TMClassifier {
@@ -176,15 +176,14 @@ fn initialize(tm: &mut TMClassifier, x: &[TMInput]) {
     }
 }
 
-// for each literal feature, if all values for the sample are true,
-// then the clause is true
-
-fn check_clause(x: &TMInput, literals: &[u16]) -> bool {
+fn check_clause(tm_input: &TMInput, literals: &[u16]) -> bool {
     literals
         .iter()
-        .all(|&literal| x.get_index(literal as usize).unwrap_or(false))
+        .all(|&literal| tm_input.get_index(literal as usize).unwrap_or(false))
 }
 
+/// Iterate over all positive and negative clauses
+/// calculate the vote for each clause
 fn vote(ta: &TATeam, x: &TMInput) -> i64 {
     ta.positive_included_literals
         .iter()
@@ -238,14 +237,12 @@ fn accuracy(predicted: Vec<Option<usize>>, y: &[usize]) -> f64 {
 
 fn train(
     tm: &mut TMClassifier,
-    x: &TMInput,
+    tm_input: &TMInput,
     y: usize,
     classes: &mut [usize; 10],
     shuffle: bool,
-    rng: &mut Xoshiro256Plus,
+    rng: &mut WyRng,
 ) {
-    assert_eq!(x.x.len(), 4704);
-
     if shuffle {
         classes.shuffle(rng);
     }
@@ -255,47 +252,42 @@ fn train(
 
     for cls in classes {
         if *cls != y {
-            let ta_team: &mut TATeam = tm.clauses.get_mut(y).unwrap();
-            let update: f64 = get_update_value(tm.t, ta_team, x, true);
+            if let Some(ta_team) = tm.clauses.get_mut(y) {
+                let update: f64 = get_update_value(tm.t, ta_team, tm_input, true);
+                feedback(
+                    tm_input,
+                    &mut ta_team.positive_clauses,
+                    &mut ta_team.negative_clauses,
+                    &mut ta_team.positive_included_literals,
+                    &mut ta_team.negative_included_literals,
+                    update,
+                    rng,
+                    &mut count,
+                    &mut literals_buffer,
+                );
+            }
 
-            feedback(
-                x,
-                &mut ta_team.positive_clauses,
-                &mut ta_team.negative_clauses,
-                &mut ta_team.positive_included_literals,
-                &mut ta_team.negative_included_literals,
-                update,
-                rng,
-                &mut count,
-                &mut literals_buffer,
-            );
+            if let Some(ta_team) = tm.clauses.get_mut(*cls) {
+                let update: f64 = get_update_value(tm.t, ta_team, tm_input, false);
 
-            let ta_team: &mut TATeam = tm.clauses.get_mut(*cls).unwrap();
-            let update: f64 = get_update_value(tm.t, ta_team, x, false);
-
-            feedback(
-                x,
-                &mut ta_team.negative_clauses,
-                &mut ta_team.positive_clauses,
-                &mut ta_team.negative_included_literals,
-                &mut ta_team.positive_included_literals,
-                update,
-                rng,
-                &mut count,
-                &mut literals_buffer,
-            );
+                feedback(
+                    tm_input,
+                    &mut ta_team.negative_clauses,
+                    &mut ta_team.positive_clauses,
+                    &mut ta_team.negative_included_literals,
+                    &mut ta_team.positive_included_literals,
+                    update,
+                    rng,
+                    &mut count,
+                    &mut literals_buffer,
+                );
+            }
         }
     }
-
-    // println!("{:#?}", tm.clauses[0].positive_included_literals.len());
 }
 
 fn train_batch(tm: &mut TMClassifier, x: &[TMInput], y: &[usize], shuffle: bool) {
-    // let mut rng = thread_rng();
-    // let mut rng: XorShiftRng = XorShiftRng::seed_from_u64(123456789);
-
-    // let mut rng: SmallRng = rand::rngs::SmallRng::from_entropy();
-    let mut rng: Xoshiro256Plus = Xoshiro256Plus::seed_from_u64(42);
+    let mut rng: WyRng = WyRng::seed_from_u64(42);
 
     // If not initialized yet
     if tm.clauses.is_empty() {
@@ -310,13 +302,9 @@ fn train_batch(tm: &mut TMClassifier, x: &[TMInput], y: &[usize], shuffle: bool)
 
     let mut classes: [usize; 10] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
 
+    // Here we call the train function for each input-output pair
     for (input, &output) in data {
-        // Here we call the train function for each input-output pair
-
-        // let now = Instant::now();
         train(tm, input, output, &mut classes, shuffle, &mut rng);
-        // let elapsed = now.elapsed();
-        // println!("Sample: {i} elapsed: {:#?}", elapsed);
     }
 }
 
@@ -413,122 +401,4 @@ fn train_model(
         );
     }
     (best_tm.0, best_tm.1.unwrap())
-}
-
-#[cfg(test)]
-mod tests {
-
-    use super::*;
-
-    #[test]
-    fn test_bit_set() {
-        let a: i64 = 0b1000_0010_0010_0010_0000_0010_1000_0000_0000_0010_0000_0010;
-        let b: i64 = 0b1000_0010_0010_0010_0000_0010_1000_0010_0010_0010_0100_0011;
-
-        let q = (a >> 1) & 1;
-        println!("{:#?}", q);
-        // let b = 0b0000_0010;
-        let now = Instant::now();
-        let c = a | b;
-        let elapsed = now.elapsed();
-        println!("{:#?}", elapsed.as_nanos());
-        println!("{:#010b}", c);
-        // println!("{:#?}", a);
-
-        let a = [
-            1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0,
-        ];
-        let b = [
-            1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0,
-        ];
-
-        let now = Instant::now();
-        let c = a
-            .iter()
-            .zip(b.iter())
-            .map(|(a, b)| a | b)
-            .collect::<Vec<_>>();
-        let elapsed = now.elapsed();
-        println!("{:#?}", elapsed.as_nanos());
-        // println!("{:#?}", c);
-        // use bitvec::prelude::*;
-        let mut a = bit_vec::BitVec::from_elem(1000, true);
-        // for i in 0..1000 {
-        //     a.set(i, i % 2 == 0);
-        // }
-
-        let now = Instant::now();
-        let rs = a.and(&a.clone());
-        let elapsed = now.elapsed();
-        println!("{:#?}", elapsed.as_nanos());
-        println!("{:#?}", rs);
-        // println!("{:#018b}", c);
-        // println!("{:#?}", rs);
-        // a.set(1, true);
-        // let mut b = bitarr![u8, Lsb0; 1];
-        // let mut b = bit_vec::BitVec::from_elem(10, false);
-        // a.set(0, true);
-
-        // let b = bitarr![i8, Lsb0; 0; 5];
-        // let c = a & b;
-        // let c = a.and(&b);
-        // println!("{:#?}", a);
-        // use bit_vec::BitVec;
-
-        // let max_prime = 10;
-
-        // // Store the primes as a BitVec
-        // let primes = {
-        //     // Assume all numbers are prime to begin, and then we
-        //     // cross off non-primes progressively
-        //     let mut bv = BitVec::from_elem(max_prime, true);
-
-        //     // Neither 0 nor 1 are prime
-        //     bv.set(0, false);
-        //     bv.set(1, false);
-
-        //     for i in 2..1 + (max_prime as f64).sqrt() as usize {
-        //         // if i is a prime
-        //         if bv[i] {
-        //             // Mark all multiples of i as non-prime (any multiples below i * i
-        //             // will have been marked as non-prime previously)
-        //             for j in i.. {
-        //                 if i * j >= max_prime {
-        //                     break;
-        //                 }
-        //                 bv.set(i * j, false)
-        //             }
-        //         }
-        //     }
-        //     bv
-        // };
-
-        // println!("primes: {:#?}", primes);
-
-        // let mut a = BitVec::from_elem(1, true);
-        // a.set(0, true);
-        // a.set(1, true);
-
-        // let mut b = BitVec::from_elem(1, true);
-        // b.set(0, true);
-        // b.set(1, true);
-        // println!("{:#?} {:#?}", a, b);
-
-        // let c = a |= b;
-        // for c in a {
-
-        // }
-        // let c = a.or(&b);
-        // println!("{:#?} {:#?} {:#?}", a, b, c);
-        // assert!(c);
-
-        // assert_eq!(a, bv);
-
-        // let mut a = BitVec::from_elem(1, true);
-        // let b = BitVec::from_elem(1, true);
-
-        // let res = a.or(&b);
-        // println!("{:#?}", res);
-        // println!("res: {:#?}", res);
-    }
 }
