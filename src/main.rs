@@ -15,7 +15,6 @@ const EPOCHS: i64 = 200;
 const NUM_CLAUSES: i64 = 128;
 const T: i64 = 8;
 const R: f64 = 0.89;
-const NEG_R: f64 = 1.0 - R;
 const L: i8 = 16;
 const BEST_TMS_SIZE: i64 = 500;
 const STATES_MIN: u8 = 0;

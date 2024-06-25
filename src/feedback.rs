@@ -1,9 +1,7 @@
 use rand::Rng;
 use wyhash::WyRng;
 
-use crate::{
-    check_clause, TMInput, CLAUSE_SIZE, INCLUDE_LIMIT, L, NEG_R, R, STATES_MIN, STATES_NUM,
-};
+use crate::{check_clause, TMInput, CLAUSE_SIZE, INCLUDE_LIMIT, L, R, STATES_MIN, STATES_NUM};
 
 #[allow(clippy::too_many_arguments)]
 pub fn feedback(
@@ -37,7 +35,7 @@ pub fn feedback(
     );
 }
 
-fn feedback1(
+pub fn feedback1(
     tm_input: &TMInput,
     clauses1: &mut [u8],
     literals1: &mut [Vec<u16>],
@@ -47,8 +45,10 @@ fn feedback1(
     count: &mut usize,
 ) {
     for (j, clauses) in clauses1.chunks_exact_mut(CLAUSE_SIZE).enumerate() {
-        if rng.gen_bool(update) {
+        let r = rng.gen::<f64>();
+        if r < update {
             if let Some(literals) = literals1.get(j) {
+                let scaled_r = r / update;
                 match check_clause(tm_input, literals) {
                     true => {
                         for (clause, &is_x_true) in clauses.iter_mut().zip(tm_input.x.iter()) {
@@ -59,14 +59,14 @@ fn feedback1(
 
                             if is_within_literal_limit && can_increment_clause {
                                 *clause = clause.saturating_add(1);
-                            } else if rng.gen_bool(NEG_R) && can_decrement_clause {
+                            } else if scaled_r > R && can_decrement_clause {
                                 *clause = clause.saturating_sub(1);
                             }
                         }
                     }
                     false => {
                         for clause in clauses.iter_mut() {
-                            if *clause > STATES_MIN && rng.gen_bool(NEG_R) {
+                            if *clause > STATES_MIN && scaled_r > R {
                                 *clause = clause.saturating_sub(1);
                             }
                         }
@@ -106,9 +106,11 @@ fn feedback2(
 ) {
     for (j, clauses) in clauses2.chunks_exact_mut(CLAUSE_SIZE).enumerate() {
         if let Some(literals) = literals2.get(j) {
-            if check_clause(tm_input, literals) && rng.gen::<f64>() < update {
+            let r = rng.gen::<f64>();
+            if check_clause(tm_input, literals) && r < update {
+                let scaled_r = r / update;
                 for (clause, x) in clauses.iter_mut().zip(tm_input.x.iter()) {
-                    if rng.gen::<f64>() <= R && !x && *clause < INCLUDE_LIMIT {
+                    if scaled_r <= R && !x && *clause < INCLUDE_LIMIT {
                         *clause = clause.saturating_add(1);
                     }
                 }
